@@ -9,7 +9,7 @@ setup(
         description = 'Quantum Circuit Resizing Algorithm',
         install_requires=[
             'numpy',
-            'bqskit',
+            'bqskit @ git+https://github.com/peachnuts/bqskit.git@add_reset'
             ],
 )
 
