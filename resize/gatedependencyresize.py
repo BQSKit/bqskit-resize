@@ -104,7 +104,10 @@ class GateDependencyResize():
             # indicates how many resizable pair can this resized circuit further have.
             resizale_pairs = self.get_resizable_qubit_pairs(circuit)
             num_resizale_pairs = len([item for sublist in resizale_pairs.values() for item in sublist])
-            return -num_resizale_pairs
+            if self.resizing_method == 'greedy':
+                return -num_resizale_pairs
+            else:
+                return circuit.num_qudits
         elif self.cost_func == 'min_depth':
             # indicates the circuit depth (only considering multi-qubit gate) for this resized circuit candidate.
             depth = circuit.multi_qudit_depth
@@ -208,8 +211,7 @@ class GateDependencyResize():
         best_cost = np.inf
         while queue:
             current_cir, current_reused_qubits, current_q_reuse, current_q_to_use = queue.pop(0)  # Dequeue a node
-            flattened_reused_qubits = [item for sublist in current_reused_qubits.values() for item in sublist]
-            if not flattened_reused_qubits:
+            if not any(value for value in current_reused_qubits.values()):
                 if current_q_reuse is None or current_q_to_use is None:
                     # If we didn't find any resetable qubit, the cost of the circuit is set to Inf.
                     current_cost = np.Inf
