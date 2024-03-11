@@ -209,13 +209,11 @@ class GateDependencyResize():
         queue = [(self.circuit, resizable_qubit_pairs, None, None)]
         best_cir = None
         best_cost = np.inf
+        current_cost = np.Inf
         while queue:
             current_cir, current_reused_qubits, current_q_reuse, current_q_to_use = queue.pop(0)  # Dequeue a node
             if not any(value for value in current_reused_qubits.values()):
-                if current_q_reuse is None or current_q_to_use is None:
-                    # If we didn't find any resetable qubit, the cost of the circuit is set to Inf.
-                    current_cost = np.Inf
-                else:
+                if current_q_reuse is not None:
                     current_cost = self.cost_function(current_cir)
                 if current_cost < best_cost:
                     best_cost = current_cost
