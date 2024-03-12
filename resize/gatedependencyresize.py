@@ -185,7 +185,6 @@ class GateDependencyResize():
                     cost = self.cost_function(update_cir)
                     if cost <= best_cost:
                         best_cost = cost
-                        best_circ = update_cir
                         best_circuits.append(best_circ)
             # Randomly pick up a circuit from the list of best circuits with the same cost
             best_circ = best_circuits[np.random.randint(len(best_circuits))]
