@@ -175,7 +175,6 @@ def reduce_block_size(qc: Circuit, resize_pairs: list, threshold: float = 1e-10,
         for key, value in reduced_blocks.items()
     }
     filtered_blocks = {k: v for k, v in filtered_blocks.items() if v}
-
     keys_list = list(filtered_blocks.keys())
     random_resizable_pair = keys_list[np.random.randint(len(keys_list))]
     random_correspond_block = filtered_blocks[random_resizable_pair][np.random.randint(len(filtered_blocks[random_resizable_pair]))]

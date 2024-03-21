@@ -169,8 +169,6 @@ class BlockLayerGenerator(LayerGenerator):
 
     def gen_successors(self,
                        circuit: Circuit,
-                       q_block1: list,
-                       q_block2: list,
                        data: PassData) -> (list[Circuit], list[Circuit]):
         """
         Generate the successors of a circuit node.
@@ -187,6 +185,10 @@ class BlockLayerGenerator(LayerGenerator):
 
         # Get the coupling graph
         coupling_graph = data.connectivity
+
+        # # Get the two blocks
+        q_block1 = data['block1']
+        q_block2 = data['block2']
 
         successors = []
         for edge1 in coupling_graph:
@@ -205,7 +207,7 @@ class BlockLayerGenerator(LayerGenerator):
                             successors.append(successor)
         return successors
 
-    def check_stop(self, circuit: Circuit, CNOT_num: int = 2):
+    def check_stop(self, circuit: Circuit, CNOT_num: int = 3):
         CNOTs = []
         for op in circuit:
             if op.gate.num_qudits == 2:

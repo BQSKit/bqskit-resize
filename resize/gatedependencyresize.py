@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import numpy as np
+from bqskit.compiler.basepass import BasePass
+from bqskit.compiler.passdata import PassData
 from bqskit.ir.circuit import Circuit
 from bqskit.ir.gates import MeasurementPlaceholder
 from bqskit.ir.gates import Reset
@@ -11,7 +13,7 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
-class GateDependencyResize():
+class GateDependencyResize(BasePass):
     """
     A quantum circuit resizing algorithm based on gate dependencies.
 
@@ -22,7 +24,7 @@ class GateDependencyResize():
 
     def __init__(
             self,
-            circ: Circuit,
+            # circ: Circuit,
             cost_func: str ='max_reuse',
             resizing_method: str = 'greedy',
             ) -> None:
@@ -45,10 +47,10 @@ class GateDependencyResize():
                 computational expensive.
                 (Default: 'greedy')
         """
-        self.circuit = circ
+        # self.circuit = circ
         self.cost_func = cost_func
         # Classical register to store the results from mid-circuit measurement
-        self.cregs = [('resize', self.circuit.num_qudits)]
+        # self.cregs = [('resize', self.circuit.num_qudits)]
         if resizing_method in ['greedy', 'bfs']:
             self.resizing_method = resizing_method
         else:
@@ -115,7 +117,7 @@ class GateDependencyResize():
         else:
             raise ValueError('Invalid cost function type. Should choose between "max_reuse" and "min_depth".')
 
-    def update_circuit(self, circuit: Circuit, q_reuse: int, q_to_use: int) -> Circuit:
+    def update_circuit(self, circuit: Circuit, q_reuse: int, q_to_use: int, target: Circuit) -> Circuit:
         """
         Resize the circuit and insert mid-circuit measurement and reset to reuse 'q_reuse' for 'q_to_use'.
 
@@ -154,14 +156,15 @@ class GateDependencyResize():
                 new_circuit.append_gate(op.gate, location=[mapping[i] for i in op.location], params=op.params)
                 partial_circuit.remove(op)
         mph_idx = len([op for op in circuit if isinstance(op.gate, Reset)])
-        mph = MeasurementPlaceholder(self.cregs, {mapping[q_reuse]: ('resize', mph_idx)})
+        cregs = [('resize', target.num_qudits)]
+        mph = MeasurementPlaceholder(cregs, {mapping[q_reuse]: ('resize', mph_idx)})
         new_circuit.append_gate(mph, location=[mapping[q_reuse]])
         new_circuit.append_gate(Reset(), location=[mapping[q_reuse]])
         for op in partial_circuit:
             new_circuit.append_gate(op.gate, location=[mapping[i] for i in op.location], params=op.params)
         return new_circuit
 
-    def greedy(self, resizable_qubit_pairs: dict[int, list]) -> Circuit:
+    def greedy(self, resizable_qubit_pairs: dict[int, list], target: Circuit) -> Circuit:
         """
         A greedy algorithm to find the best resized circuit.
         For the input circuit, during each iteration, we only reuse one qubit (i.e., insert one MMR). The greedy algorithm
@@ -173,19 +176,21 @@ class GateDependencyResize():
         """
         # The circuit with the smallest cost is preferable. So we start the initial cost to the infinitive.
         best_cost = np.Inf
-        best_circ = None
         # Some circuits might have the same cost values. We store them in a list and randomly pick one for the next round.
         best_circuits = []
-        circuit = self.circuit.copy()
+        circuit = target.copy()
+        best_circ = target.copy()
         while any(value for value in resizable_qubit_pairs.values()):
             for q_reuse, qs_to_use in resizable_qubit_pairs.items():
                 for q_to_use in qs_to_use:
                     # For each resizable pair, we update the circuit by reusing qubit and inserting one MMR
-                    update_cir = self.update_circuit(circuit, q_reuse, q_to_use)
+                    update_cir = self.update_circuit(circuit, q_reuse, q_to_use, target)
                     cost = self.cost_function(update_cir)
-                    if cost <= best_cost:
+                    if cost < best_cost:
                         best_cost = cost
-                        best_circuits.append(best_circ)
+                        best_circuits = [update_cir]
+                    elif cost == best_cost:
+                        best_circuits.append(update_cir)
             # Randomly pick up a circuit from the list of best circuits with the same cost
             best_circ = best_circuits[np.random.randint(len(best_circuits))]
             resizable_qubit_pairs = self.get_resizable_qubit_pairs(best_circ)
@@ -196,7 +201,7 @@ class GateDependencyResize():
                 best_circuits = []
         return best_circ
 
-    def bfs(self, resizable_qubit_pairs: dict[int, list]) -> Circuit:
+    def bfs(self, resizable_qubit_pairs: dict[int, list], target: Circuit) -> Circuit:
         """
              A breath first search algorithm to find the best resized circuit.
              For the input circuit, we explore all the possible resizing candidates and pick the best circuit.
@@ -205,8 +210,8 @@ class GateDependencyResize():
                      resizable_qubit_pairs (dict): the possible resizable pairs for the input circuit to resize.
         """
         # Queue of nodes to visit, each node is a tuple (circuit, reused_qubits, q_reuse, q_to_use)
-        queue = [(self.circuit, resizable_qubit_pairs, None, None)]
-        best_cir = None
+        queue = [(target, resizable_qubit_pairs, None, None)]
+        best_cir = target.copy()
         best_cost = np.inf
         current_cost = np.Inf
         while queue:
@@ -222,17 +227,17 @@ class GateDependencyResize():
                 for q_reuse, qs_to_use in current_reused_qubits.items():
                     for q_to_use in qs_to_use:
                         # add mid-circuit measurement and reset
-                        new_cir = self.update_circuit(current_cir, q_reuse, q_to_use)
+                        new_cir = self.update_circuit(current_cir, q_reuse, q_to_use, target)
                         # get the new resetable qubit from the updated circuit
                         new_reused_qubits = self.get_resizable_qubit_pairs(new_cir)
                         queue.append((new_cir, new_reused_qubits, q_reuse, q_to_use))  # Enqueue the new node
         return best_cir
 
-
-    def run(self) -> Circuit:
-        resizable_qubit_pairs = self.get_resizable_qubit_pairs(self.circuit)
+    async def run(self, circuit: Circuit, data: PassData) -> None:
+        input_circuit = circuit.copy()
+        resizable_qubit_pairs = self.get_resizable_qubit_pairs(input_circuit)
         if self.resizing_method == 'greedy':
-            resized_circuit = self.greedy(resizable_qubit_pairs)
+            resized_circuit = self.greedy(resizable_qubit_pairs, input_circuit)
         else:
-            resized_circuit = self.bfs(resizable_qubit_pairs)
-        return resized_circuit
+            resized_circuit = self.bfs(resizable_qubit_pairs, input_circuit)
+        circuit.become(resized_circuit)
