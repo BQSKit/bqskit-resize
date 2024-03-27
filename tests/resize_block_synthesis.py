@@ -39,7 +39,7 @@ print('resizable pairs based on qfactor:', resizable_pairs_qfactor)
 resizable_pair, block_reduced = reduce_block_size(qc, resizable_pairs_qfactor)
 block_1, block_2 = block_reduced[0], block_reduced[1]
 
-initial_coupling = [(0, 1), (1, 2), (2, 3), (3, 4)]
+initial_coupling = [(0, 1), (1, 2), (2, 3)]
 
 updated_map = update_coupling_graph([resizable_pair[0]], [resizable_pair[1]], initial_coupling, qc.num_qudits)
 model = MachineModel(qc.num_qudits, coupling_graph=updated_map)

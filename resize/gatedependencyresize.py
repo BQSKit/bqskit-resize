@@ -9,6 +9,7 @@ from bqskit.ir.gates import Reset
 from .utils import ending_point
 from .utils import starting_point
 from .utils import update_mapping_list
+from .utils import get_resizable_qubit_pairs
 import logging
 
 _logger = logging.getLogger(__name__)
@@ -24,7 +25,6 @@ class GateDependencyResize(BasePass):
 
     def __init__(
             self,
-            # circ: Circuit,
             cost_func: str ='max_reuse',
             resizing_method: str = 'greedy',
             ) -> None:
@@ -49,51 +49,10 @@ class GateDependencyResize(BasePass):
         """
         # self.circuit = circ
         self.cost_func = cost_func
-        # Classical register to store the results from mid-circuit measurement
-        # self.cregs = [('resize', self.circuit.num_qudits)]
         if resizing_method in ['greedy', 'bfs']:
             self.resizing_method = resizing_method
         else:
             raise ValueError('Invalid resizing method. Should choose between "greedy" and "bfs".')
-
-    def get_independent_qubits(self, qubit: int, cycle_opts: dict, circuit: Circuit) -> list[int]:
-        """
-        Get a list of qubits that can be reused by the input qubit.
-        If the list is empty, it means that we cannot reuse this qubit for any others.
-
-        Args:
-            qubit (int): check if this qubit is reusable for other qubits.
-            cycle_opts (dict): The gates for each cycle in a reverse order.
-            circuit (Circuit): the circuit to resize.
-        """
-        dependent_qubits = {qubit}
-        end_point = len(cycle_opts) - 1
-        for cycle in range(end_point, -1, -1):
-            for opt in cycle_opts[cycle]:
-                if any(q in opt.location for q in dependent_qubits):
-                    dependent_qubits.update(q for q in opt.location)
-        # check if the finish of this qubit depends on the finish of all the other qubits,
-        # if not, we can reuse this qubit for other qubits.
-        independent_qubits = [q for q in range(circuit.num_qudits) if q not in dependent_qubits]
-        return independent_qubits
-
-    def get_resizable_qubit_pairs(self, circuit: Circuit) -> dict[int, list]:
-        """
-        Get all the possible resizable qubit pairs for the input circuit.
-
-        Args:
-            circuit (Circuit): The input circuit to resize.
-        """
-        resizable_qubit_pairs = {}
-        ending_points = ending_point(circuit)
-        for qubit in range(circuit.num_qudits):
-            # for each qubit, from its ending point to the start, reversely collecting a list of gates in the same cycle
-            qubit_opt_reverse_order = {cycle: [] for cycle in range(ending_points[qubit] + 1)}
-            for cycle, op in circuit.operations_with_cycles():
-                if cycle <= ending_points[qubit]:
-                    qubit_opt_reverse_order[cycle].append(op)
-            resizable_qubit_pairs[qubit] = self.get_independent_qubits(qubit, qubit_opt_reverse_order, circuit)
-        return resizable_qubit_pairs
 
     def cost_function(self, circuit: Circuit) -> int:
         """
@@ -104,7 +63,7 @@ class GateDependencyResize(BasePass):
         """
         if self.cost_func == 'max_reuse':
             # indicates how many resizable pair can this resized circuit further have.
-            resizale_pairs = self.get_resizable_qubit_pairs(circuit)
+            resizale_pairs = get_resizable_qubit_pairs(circuit)
             num_resizale_pairs = len([item for sublist in resizale_pairs.values() for item in sublist])
             if self.resizing_method == 'greedy':
                 return -num_resizale_pairs
@@ -193,7 +152,7 @@ class GateDependencyResize(BasePass):
                         best_circuits.append(update_cir)
             # Randomly pick up a circuit from the list of best circuits with the same cost
             best_circ = best_circuits[np.random.randint(len(best_circuits))]
-            resizable_qubit_pairs = self.get_resizable_qubit_pairs(best_circ)
+            resizable_qubit_pairs = get_resizable_qubit_pairs(best_circ)
             circuit = best_circ
             # If the best circuit is still resizable, we start a new round of resizing.
             if any(value for value in resizable_qubit_pairs.values()):
@@ -229,13 +188,13 @@ class GateDependencyResize(BasePass):
                         # add mid-circuit measurement and reset
                         new_cir = self.update_circuit(current_cir, q_reuse, q_to_use, target)
                         # get the new resetable qubit from the updated circuit
-                        new_reused_qubits = self.get_resizable_qubit_pairs(new_cir)
+                        new_reused_qubits = get_resizable_qubit_pairs(new_cir)
                         queue.append((new_cir, new_reused_qubits, q_reuse, q_to_use))  # Enqueue the new node
         return best_cir
 
     async def run(self, circuit: Circuit, data: PassData) -> None:
         input_circuit = circuit.copy()
-        resizable_qubit_pairs = self.get_resizable_qubit_pairs(input_circuit)
+        resizable_qubit_pairs = get_resizable_qubit_pairs(input_circuit)
         if self.resizing_method == 'greedy':
             resized_circuit = self.greedy(resizable_qubit_pairs, input_circuit)
         else:
